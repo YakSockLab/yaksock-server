@@ -17,6 +17,22 @@ async def create_images_table():
         print("Images table created or already exists.")
     finally:
         await conn.close()
+        
+async def create_drugs_table():
+    conn = await asyncpg.connect(DATABASE_URL)
+    try:
+        await conn.execute("""
+            CREATE TABLE IF NOT EXISTS drugs (
+                id SERIAL PRIMARY KEY,
+                item_name TEXT UNIQUE NOT NULL,
+                ingr_code VARCHAR(50),
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+        print("Drugs table created or already exists.")
+    finally:
+        await conn.close()
 
 async def init_db():
     await create_images_table()
+    await create_drugs_table()
