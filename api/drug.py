@@ -3,7 +3,7 @@ from pydantic import BaseModel
 from typing import List
 from service.drug_service import get_ingredients_by_drug_names
 
-router = APIRouter()
+router = APIRouter(prefix="/api", tags=["DRUG"])
 
 class DrugNames(BaseModel):
     drug_names: List[str]

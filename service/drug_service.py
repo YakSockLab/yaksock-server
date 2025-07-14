@@ -15,12 +15,10 @@ async def get_ingredients_by_drug_names(drug_names: List[str]) -> List[Dict[str,
                 )
             """
             rows = await conn.fetch(query, drug_names)
-            print("rows", rows)
             ingredients = [
                 {"drugName": row['drugName'], "ingrCode": row['ingrCode']}
                 for row in rows
             ]
-            print("ingredients", ingredients)
             return ingredients
         finally:
             await conn.close()
