@@ -1,4 +1,8 @@
 import asyncpg
+import os
+import sys
+from sqlalchemy import create_engine
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from config.settings import DATABASE_URL
 
 async def create_images_table():

@@ -178,3 +178,4 @@ pyrightconfig.json
 uploads/
 data/csv
 dur_outputs/
+.DS_Store

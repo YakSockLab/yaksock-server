@@ -6,7 +6,7 @@ router = APIRouter(prefix="/api", tags=["DUR"])
 
 class DrugInfo(BaseModel):
     drugName: str
-    ingredientCode: str
+    ingrCode: str
 
 class DrugRequest(BaseModel):
     drugs: list[DrugInfo]

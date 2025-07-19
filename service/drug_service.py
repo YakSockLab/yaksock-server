@@ -11,7 +11,7 @@ async def get_ingredients_by_drug_names(drug_names: List[str]) -> List[Dict[str,
                 SELECT item_name AS "drugName", ingr_code AS "ingrCode"
                 FROM drugs
                 WHERE item_name LIKE ANY(
-                    SELECT '%' || unnest($1::text[]) || '%'
+                    SELECT unnest($1::text[]) || '%'
                 )
             """
             rows = await conn.fetch(query, drug_names)

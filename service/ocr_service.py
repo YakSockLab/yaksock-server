@@ -5,6 +5,7 @@ from PIL import Image
 import aiofiles
 import asyncio
 import io
+import re
 from service.image_service import get_image_path_by_upload_id
 
 # .env 파일에서 API 키 로드
@@ -58,12 +59,19 @@ async def perform_ocr(upload_ids: list[str]) -> list[dict]:
 
             # 응답 처리 (약물명 리스트로 가정)
             drug_names = response.text.strip().split('\n')
-            drug_names = [name.strip() for name in drug_names if name.strip()]
+            # 약물명 정제: 불필요한 문자(*, -, 공백 등) 제거
+            cleaned_drug_names = []
+            for name in drug_names:
+                # 공백 제거 및 불필요한 접두사(*, -, 공백 등) 제거
+                cleaned_name = re.sub(r'^[\s*\-*]+', '', name.strip())
+                # 빈 문자열이 아닌 경우에만 추가
+                if cleaned_name:
+                    cleaned_drug_names.append(cleaned_name)
             
             # 결과 추가
             results.append({
                 "upload_id": upload_id,
-                "drug_names": drug_names
+                "drug_names": cleaned_drug_names
             })
 
         return results
