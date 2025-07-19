@@ -6,7 +6,7 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from config.settings import DATABASE_URL  # settings.py에서 데이터베이스 URL 가져오기
 
 # CSV 파일이 있는 디렉토리 경로
-CSV_DIR = os.path.join(os.path.dirname(__file__), '..', 'data', 'csv')
+CSV_DIR = os.path.join(os.path.dirname(__file__), '..', 'dur_outputs')
 CSV_DIR = os.path.abspath(CSV_DIR)
 print(f"CSV_DIR: {CSV_DIR}")
 
@@ -17,7 +17,7 @@ CSV_FILES = [
     'dur_data_용량주의.csv',
     'dur_data_임부금기.csv',
     'dur_data_특정연령대금기.csv',
-    'dur_data_효능군중복.csv'
+    'dur_data_투여기간주의.csv'
 ]
 
 def load_csv_files():
