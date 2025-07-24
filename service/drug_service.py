@@ -1,20 +1,25 @@
 import asyncpg
+import logging
 from typing import List, Dict
 from config.settings import DATABASE_URL
 
+# 로깅 설정
+logging.basicConfig(level=logging.DEBUG)
+logger = logging.getLogger(__name__)
+
 async def get_ingredients_by_drug_names(drug_names: List[str]) -> List[Dict[str, str]]:
-    print(drug_names)
+    # 중복 제거
+    unique_drug_names = list(set(drug_names))
+    logger.debug(f"unique_drug_names:{unique_drug_names}")
     try:
         conn = await asyncpg.connect(DATABASE_URL)
         try:
             query = """
-                SELECT item_name AS "drugName", ingr_code AS "ingrCode"
-                FROM drugs
-                WHERE item_name LIKE ANY(
-                    SELECT unnest($1::text[]) || '%'
-                )
+                SELECT COALESCE(i.item_name, d.item_name) AS "drugName", i.ingr_code AS "ingrCode"
+                FROM (SELECT unnest($1::text[]) AS item_name) d
+                LEFT JOIN drugs i ON i.item_name LIKE d.item_name || '%'
             """
-            rows = await conn.fetch(query, drug_names)
+            rows = await conn.fetch(query, unique_drug_names)
             ingredients = [
                 {"drugName": row['drugName'], "ingrCode": row['ingrCode']}
                 for row in rows
