@@ -33,14 +33,13 @@ async def perform_ocr(upload_ids: list[str]) -> list[dict]:
         instruction = """
         구조를 유지하면서 모든 텍스트 콘텐츠를 추출하세요.
         테이블, 열, 헤더 및 모든 구조화된 콘텐츠에 특별히 주의하세요.
-        단락 구분 및 형식을 유지하세요.
+        단락 구분 및 형식을 유지하고 순서를 유지하여 배치해주세요.
         약물명만 뽑아와주세요. 중복 없이 제공해주세요.
         """
 
         for upload_id in upload_ids:
             # DB에서 이미지 경로 조회
             image_path = await get_image_path_by_upload_id(upload_id)
-            print("image_path:"+image_path)
             
             # 이미지 파일 확인
             if not os.path.exists(image_path):
@@ -59,19 +58,22 @@ async def perform_ocr(upload_ids: list[str]) -> list[dict]:
 
             # 응답 처리 (약물명 리스트로 가정)
             drug_names = response.text.strip().split('\n')
-            # 약물명 정제: 불필요한 문자(*, -, 공백 등) 제거
+            # 약물명 정제: 불필요한 문자(*, -, 공백 등) 제거, 숫자는 유지
             cleaned_drug_names = []
             for name in drug_names:
-                # 공백 제거 및 불필요한 접두사(*, -, 공백 등) 제거
-                cleaned_name = re.sub(r'^[\s*\-*]+', '', name.strip())
+                # 불필요한 접두사/접미사 및 공백 제거
+                cleaned_name = re.sub(r'[\s*\-+]+', '', name.strip())
                 # 빈 문자열이 아닌 경우에만 추가
                 if cleaned_name:
                     cleaned_drug_names.append(cleaned_name)
             
+            # 중복 제거
+            unique_drug_names = list(set(cleaned_drug_names))
+            
             # 결과 추가
             results.append({
                 "upload_id": upload_id,
-                "drug_names": cleaned_drug_names
+                "drug_names": unique_drug_names
             })
 
         return results
