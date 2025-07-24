@@ -1,7 +1,9 @@
 from fastapi import FastAPI
-from api import upload, ocr, drug, dur, llm, e2e
-import psycopg2
-from config.settings import DB_CONFIG
+from contextlib import asynccontextmanager
+from api import image, ocr, drug, dur, llm, e2e
+from db.init_db import init_db
+from config.settings import DATABASE_URL
+import asyncpg
 
 app = FastAPI(
     title="YakSock API",
@@ -9,19 +11,25 @@ app = FastAPI(
     version="1.0.0"
 )
 
-try:
-    conn = psycopg2.connect(**DB_CONFIG)
-    cur = conn.cursor()
-    cur.execute("SELECT version();")
-    version = cur.fetchone()
-    print("PostgreSQL Version:", version)
-except Exception as e:
-    print("에러 발생:", e)
-finally:
-    if 'cur' in locals(): cur.close()
-    if 'conn' in locals(): conn.close()
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # 앱 시작 시 DB 초기화
+    try:
+        await init_db()
+        # DB 연결 테스트
+        conn = await asyncpg.connect(DATABASE_URL)
+        try:
+            version = await conn.fetchval("SELECT version();")
+            print("PostgreSQL Version:", version)
+        finally:
+            await conn.close()
+    except Exception as e:
+        print("DB 초기화 또는 연결 에러:", e)
+    yield
 
-app.include_router(upload.router)
+app = FastAPI(lifespan=lifespan)
+
+app.include_router(image.router)
 app.include_router(ocr.router)
 app.include_router(drug.router)
 app.include_router(dur.router)

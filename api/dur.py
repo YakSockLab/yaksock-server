@@ -1,22 +1,27 @@
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
+from typing import List, Optional
+from service.dur_service import check_drug_interaction
 
 router = APIRouter(prefix="/api", tags=["DUR"])
 
-class IngredientCodes(BaseModel):
-    ingredientCodes: list[str]
+# Pydantic 모델 정의
+class Drug(BaseModel):
+    drugName: str
+    ingrCode: Optional[str] = None  # ingrCode는 선택적(Optional)으로 설정
+
+class DrugInteractionRequest(BaseModel):
+    drugs: List[Drug]
 
 @router.post("/check-drug-interaction")
-async def check_drug_interaction(codes: IngredientCodes):
-    dur_result = [
-        {
-            "interaction": "타이레놀정500mg와 세레브렉스캡슐200mg 동시 복용 시 간 손상 위험",
-            "recommendation": "동시 복용 금지, 의사 상담 필요"
-        }
-    ]
-    if not dur_result:
+async def check_drug_interaction_endpoint(request: DrugInteractionRequest):
+    try:
+        result = await check_drug_interaction(request)
+        return result
+    except HTTPException as e:
+        raise e
+    except Exception as e:
         raise HTTPException(status_code=500, detail={
-            "error": "DURApiError",
-            "message": "외부 DUR API 호출 실패"
+            "error": "InternalServerError",
+            "message": f"서버 내부 에러: {str(e)}"
         })
-    return {"durResult": dur_result, "status": "success"}
