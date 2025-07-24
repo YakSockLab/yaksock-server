@@ -29,16 +29,14 @@ num_of_rows = 100
 response_type = "json"
 DELAY = 1.0  # 딜레이 증가
 
-# DUR 유형과 엔드포인트 매핑
+# DUR 유형과 엔드포인트 매핑 (효능군중복 제외)
 dur_type_to_url = {
     "병용금기": "getUsjntTabooInfoList03",
     "특정연령대금기": "getSpcifyAgrdeTabooInfoList03",
     "임부금기": "getPwnmTabooInfoList03",
     "용량주의": "getCpctyAtentInfoList03",
     "투여기간주의": "getMdctnPdAtentInfoList03",
-    "노인주의": "getOdsnAtentInfoList03",
-    "효능군중복": "getEfcyDplctInfoList03",
-    "분할주의": "getSeobangjeongPartitnAtentInfoList03",
+    "노인주의": "getOdsnAtentInfoList03"
 }
 dur_types = list(dur_type_to_url.keys())
 
@@ -47,8 +45,8 @@ output_dir = "dur_outputs"
 if not os.path.exists(output_dir):
     os.makedirs(output_dir)
 
-def get_data(type_name, ingr_code=None, page=1):
-    """주어진 DUR 유형과 ingrCode로 API 데이터를 요청합니다."""
+def get_data(type_name, page=1):
+    """주어진 DUR 유형으로 API 데이터를 요청합니다."""
     url = f"{base_url}/{dur_type_to_url[type_name]}"
     params = {
         "serviceKey": service_key,
@@ -57,8 +55,6 @@ def get_data(type_name, ingr_code=None, page=1):
         "type": response_type,
         "typeName": type_name,
     }
-    if ingr_code:
-        params["ingrCode"] = ingr_code
 
     # 요청 파라미터 로깅
     logging.info(f"API 요청: URL={url}, 파라미터={params}")
@@ -73,32 +69,32 @@ def get_data(type_name, ingr_code=None, page=1):
 
         # 응답 구조 확인
         if data.get("header", {}).get("resultCode") != "00":
-            logging.error(f"API 오류 ({type_name} - {ingr_code}): {data.get('header', {}).get('resultMsg', '알 수 없는 오류')}")
-            return None
+            logging.error(f"API 오류 ({type_name}): {data.get('header', {}).get('resultMsg', '알 수 없는 오류')}")
+            return None, 0
 
         body = data.get("body", {})
-        if not body or body.get("totalCount", 0) == 0 or not body.get("items"):
-            logging.info(f"{type_name} - {ingr_code}: 데이터 없음")
-            return None
+        total_count = body.get("totalCount", 0)
+        if not body or total_count == 0 or not body.get("items"):
+            logging.info(f"{type_name}: 데이터 없음")
+            return None, total_count
 
-        return body["items"]
+        return body["items"], total_count
     except requests.exceptions.RequestException as e:
-        logging.error(f"API 요청 오류 ({type_name} - {ingr_code}): {e}")
-        return None
+        logging.error(f"API 요청 오류 ({type_name}): {e}")
+        return None, 0
     except json.JSONDecodeError as e:
-        logging.error(f"JSON 디코딩 오류 ({type_name} - {ingr_code}): {e}")
-        return None
+        logging.error(f"JSON 디코딩 오류 ({type_name}): {e}")
+        return None, 0
 
 def collect_data_for_type(type_name):
     """특정 DUR 유형의 데이터를 수집하여 item_name 기준으로 중복을 제거하고 CSV 파일에 저장합니다."""
     output_file = os.path.join(output_dir, f"dur_data_{type_name}.csv")
     page = 1
     item_dict = {}
+    total_count = 0
 
     while True:
-        # 효능군중복에 대해 테스트용 ingrCode 추가 (실제 값으로 교체 필요)
-        test_ingr_code = "123456" if type_name == "효능군중복" else None
-        data = get_data(type_name, ingr_code=test_ingr_code, page=page)
+        data, total_count = get_data(type_name, page=page)
         if not data:
             logging.info(f"{type_name}: 더 이상 데이터가 없거나 페이지 {page}에서 종료")
             break
@@ -121,6 +117,11 @@ def collect_data_for_type(type_name):
                     item[key] = value.replace("\n", "").replace("\r", "")
 
         page += 1
+        # 전체 페이지 수 계산
+        total_pages = (total_count + num_of_rows - 1) // num_of_rows
+        if page > total_pages:
+            logging.info(f"{type_name}: 모든 페이지({total_pages}) 처리 완료")
+            break
         time.sleep(DELAY)
 
     written_rows = 0
