@@ -35,7 +35,7 @@ async def perform_ocr(upload_ids: list[str]) -> list[dict]:
         구조를 유지하면서 모든 텍스트 콘텐츠를 추출하세요.
         테이블, 열, 헤더 및 모든 구조화된 콘텐츠에 특별히 주의하세요.
         단락 구분 및 형식을 유지하고 순서를 유지하여 배치해주세요.
-        약물명만 뽑아와주세요. 중복 없이 제공해주세요.
+        약물명만 뽑아와주고 나머지 불필요한 데이터는 가져오지 마세요. 중복 없이 제공해주세요.
         """
         async with aiohttp.ClientSession() as session:
             for upload_id in upload_ids:
