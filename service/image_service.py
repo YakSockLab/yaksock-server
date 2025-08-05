@@ -12,11 +12,11 @@ if not os.path.exists(UPLOAD_DIR):
     os.makedirs(UPLOAD_DIR)
 
 async def upload_image_to_db(image_content: bytes, filename: str) -> str:
-    # 파일 크기 제한 (5MB)
-    if len(image_content) > 5 * 1024 * 1024:
+    # 파일 크기 제한 (10MB)
+    if len(image_content) > 10 * 1024 * 1024:
         raise HTTPException(status_code=400, detail={
             "error": "FileTooLarge",
-            "message": "이미지 크기는 최대 5MB 이하로 업로드 해주세요."
+            "message": "이미지 크기는 최대 10MB 이하로 업로드 해주세요."
         })
     
     # UUID로 고유 파일명 생성
