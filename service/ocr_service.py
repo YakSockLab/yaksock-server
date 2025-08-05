@@ -1,12 +1,13 @@
 import os
-from dotenv import load_dotenv
 import google.generativeai as genai
-from PIL import Image
 import aiofiles
 import asyncio
 import io
 import re
+from PIL import Image
+from dotenv import load_dotenv
 from service.image_service import get_image_path_by_upload_id
+from fastapi import HTTPException
 
 # .env 파일에서 API 키 로드
 load_dotenv()
@@ -31,10 +32,11 @@ async def perform_ocr(upload_ids: list[str]) -> list[dict]:
         
         # OCR 지시사항
         instruction = """
-        구조를 유지하면서 모든 텍스트 콘텐츠를 추출하세요.
-        테이블, 열, 헤더 및 모든 구조화된 콘텐츠에 특별히 주의하세요.
-        단락 구분 및 형식을 유지하고 순서를 유지하여 배치해주세요.
-        약물명만 뽑아와주세요. 중복 없이 제공해주세요.
+        구조를 유지하면서 모든 텍스트 콘텐츠를 추출하세요.\
+        테이블, 열, 헤더 및 모든 구조화된 콘텐츠에 특별히 주의하세요.\
+        단락 구분 및 형식을 유지하고 순서를 유지하여 배치해주세요.\
+        약물명만 뽑아와주세요. 중복 없이 제공해주세요.\
+        만일 이미지에 텍스트가 포함되어 있지 않다면, "약물명추출불가"라고 고정으로 응답해주세요.
         """
 
         for upload_id in upload_ids:
@@ -69,6 +71,12 @@ async def perform_ocr(upload_ids: list[str]) -> list[dict]:
             
             # 중복 제거
             unique_drug_names = list(set(cleaned_drug_names))
+            print(f"Extracted drug names for {upload_id}: {unique_drug_names}")
+            if(unique_drug_names == ['약물명추출불가']):
+                raise HTTPException(status_code=422, detail={
+                    "error": "OCRExtractionFailed",
+                    "message": "잠시 오류가 발생했어요. 다시 시도해주세요."
+                })
             
             # 결과 추가
             results.append({
@@ -78,5 +86,5 @@ async def perform_ocr(upload_ids: list[str]) -> list[dict]:
 
         return results
 
-    except Exception as e:
-        raise Exception(f"OCR 처리 중 오류: {str(e)}")
+    except HTTPException:
+        raise

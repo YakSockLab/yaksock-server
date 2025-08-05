@@ -22,6 +22,8 @@ async def ocr_extract(upload: UploadIds):
                 "message": "약물명이 인식되지 않았습니다. 다시 업로드해주세요."
             })
         return {"drugNames": drug_names, "status": "success"}
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail={
             "error": "OCRError",
