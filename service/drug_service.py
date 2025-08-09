@@ -15,10 +15,18 @@ async def get_ingredients_by_drug_names(drug_names: List[str]) -> List[Dict[str,
         conn = await asyncpg.connect(DATABASE_URL)
         try:
             query = """
-                SELECT COALESCE(i.item_name, d.item_name) AS "drugName", i.ingr_code AS "ingrCode"
-                FROM (SELECT unnest($1::text[]) AS item_name) d
-                LEFT JOIN drugs i ON i.item_name LIKE d.item_name || '%'
-            """
+                    WITH search_results AS (
+                        SELECT DISTINCT ON (d.item_name) 
+                            COALESCE(i.item_name, d.item_name) AS "drugName",
+                            i.ingr_code AS "ingrCode",
+                            d.item_name AS original_input
+                        FROM (SELECT unnest($1::text[]) AS item_name) d
+                        LEFT JOIN drugs i ON i.item_name LIKE d.item_name || '%'
+                    )
+                    SELECT "drugName", "ingrCode"
+                    FROM search_results
+                    ORDER BY original_input
+                    """
             rows = await conn.fetch(query, unique_drug_names)
             ingredients = [
                 {"drugName": row['drugName'], "ingrCode": row['ingrCode']}
