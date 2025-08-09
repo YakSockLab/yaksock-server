@@ -1,13 +1,13 @@
 import os
-from dotenv import load_dotenv
 import google.generativeai as genai
-from PIL import Image
-# import aiofiles
+import aiofiles
 import asyncio
 import io
 import re
-import aiohttp  # 추가: URL 다운로드를 위한 비동기 HTTP 클라이언트
+from PIL import Image
+from dotenv import load_dotenv
 from service.image_service import get_image_path_by_upload_id
+from fastapi import HTTPException
 
 # .env 파일에서 API 키 로드
 load_dotenv()
@@ -32,61 +32,59 @@ async def perform_ocr(upload_ids: list[str]) -> list[dict]:
         
         # OCR 지시사항
         instruction = """
-        구조를 유지하면서 모든 텍스트 콘텐츠를 추출하세요.
-        테이블, 열, 헤더 및 모든 구조화된 콘텐츠에 특별히 주의하세요.
-        단락 구분 및 형식을 유지하고 순서를 유지하여 배치해주세요.
-        약물명만 뽑아와주고 나머지 불필요한 데이터는 가져오지 마세요. 중복 없이 제공해주세요.
+        구조를 유지하면서 모든 텍스트 콘텐츠를 추출하세요.\
+        테이블, 열, 헤더 및 모든 구조화된 콘텐츠에 특별히 주의하세요.\
+        단락 구분 및 형식을 유지하고 순서를 유지하여 배치해주세요.\
+        약물명만 뽑아와주세요. 중복 없이 제공해주세요.\
+        만일 이미지에 텍스트가 포함되어 있지 않다면, "약물명추출불가"라고 고정으로 응답해주세요.
         """
-        async with aiohttp.ClientSession() as session:
-            for upload_id in upload_ids:
-                # DB에서 이미지 경로 조회
-                image_path = await get_image_path_by_upload_id(upload_id)
-                
-                # 이미지 파일 확인
-                # if not os.path.exists(image_path):
-                #    raise FileNotFoundError(f"이미지 파일을 찾을 수 없습니다: {image_path}")
 
-                # 이미지 열기
-                # async with aiofiles.open(image_path, mode='rb') as f:
-                #    image_data = await f.read()
-                #    image = Image.open(io.BytesIO(image_data))
+        for upload_id in upload_ids:
+            # DB에서 이미지 경로 조회
+            image_path = await get_image_path_by_upload_id(upload_id)
+            
+            # 이미지 파일 확인
+            if not os.path.exists(image_path):
+                raise FileNotFoundError(f"이미지 파일을 찾을 수 없습니다: {image_path}")
 
-                # URL에서 이미지 다운로드
-                async with session.get(image_path) as response:
-                    if response.status != 200:
-                        raise ValueError(f"이미지 다운로드 실패: {image_path} (상태 코드: {response.status})")
-                    image_data = await response.read()
-                    
-                    # BytesIO로 이미지 열기
-                    image = Image.open(io.BytesIO(image_data))
+            # 이미지 열기
+            async with aiofiles.open(image_path, mode='rb') as f:
+                image_data = await f.read()
+                image = Image.open(io.BytesIO(image_data))
 
-                # Gemini API 호출
-                response = await asyncio.to_thread(
-                    model.generate_content,
-                    [instruction, image]
-                )
+            # Gemini API 호출
+            response = await asyncio.to_thread(
+                model.generate_content,
+                [instruction, image]
+            )
 
-                # 응답 처리 (약물명 리스트로 가정)
-                drug_names = response.text.strip().split('\n')
-                # 약물명 정제: 불필요한 문자(*, -, 공백 등) 제거, 숫자는 유지
-                cleaned_drug_names = []
-                for name in drug_names:
-                    # 불필요한 접두사/접미사 및 공백 제거
-                    cleaned_name = re.sub(r'[\s*\-+]+', '', name.strip())
-                    # 빈 문자열이 아닌 경우에만 추가
-                    if cleaned_name:
-                        cleaned_drug_names.append(cleaned_name)
-                
-                # 중복 제거
-                unique_drug_names = list(set(cleaned_drug_names))
-                
-                # 결과 추가
-                results.append({
-                    "upload_id": upload_id,
-                    "drug_names": unique_drug_names
+            # 응답 처리 (약물명 리스트로 가정)
+            drug_names = response.text.strip().split('\n')
+            # 약물명 정제: 불필요한 문자(*, -, 공백 등) 제거, 숫자는 유지
+            cleaned_drug_names = []
+            for name in drug_names:
+                # 불필요한 접두사/접미사 및 공백 제거
+                cleaned_name = re.sub(r'[\s*\-+]+', '', name.strip())
+                # 빈 문자열이 아닌 경우에만 추가
+                if cleaned_name:
+                    cleaned_drug_names.append(cleaned_name)
+            
+            # 중복 제거
+            unique_drug_names = list(set(cleaned_drug_names))
+            print(f"Extracted drug names for {upload_id}: {unique_drug_names}")
+            if(unique_drug_names == ['약물명추출불가']):
+                raise HTTPException(status_code=422, detail={
+                    "error": "OCRExtractionFailed",
+                    "message": "잠시 오류가 발생했어요. 다시 시도해주세요."
                 })
+            
+            # 결과 추가
+            results.append({
+                "upload_id": upload_id,
+                "drug_names": unique_drug_names
+            })
 
         return results
 
-    except Exception as e:
-        raise Exception(f"OCR 처리 중 오류: {str(e)}")
+    except HTTPException:
+        raise
