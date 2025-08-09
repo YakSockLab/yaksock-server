@@ -41,25 +41,6 @@ if not SERVICE_KEY:
 BASE_URL = "http://apis.data.go.kr/1471000/DURIrdntInfoService03"
 DRUG_PRDT_URL = "http://apis.data.go.kr/1471000/DrugPrdtPrmsnInfoService06"
 
-# Pydantic 모델 정의
-class Drug(BaseModel):
-    drugName: str
-    ingrCode: Optional[str] = None
-
-    class Config:
-        allow_population_by_field_name = True
-        fields = {
-            "drugName": {"alias": "drug_name"},
-            "ingrCode": {"alias": "ingr_code"}
-        }
-
-class DrugInteractionRequest(BaseModel):
-    drugs: List[Drug]
-
-    class Config:
-        allow_population_by_field_name = True
-        fields = {"drugs": {"alias": "drug_list"}}
-
 # API 엔드포인트 및 typeName 매핑
 API_ENDPOINTS = {
     "usjnt_taboo": {
@@ -111,7 +92,7 @@ async def fetch_dur_data(endpoint: str, type_name: str, ingr_code: str, field: s
     params = {
         "serviceKey": SERVICE_KEY,
         "pageNo": 1,
-        "numOfRows": 1,
+        "numOfRows": 100,
         "type": "json",
         "typeName": type_name,
         "ingrCode": ingr_code
@@ -123,11 +104,9 @@ async def fetch_dur_data(endpoint: str, type_name: str, ingr_code: str, field: s
 
     async with httpx.AsyncClient() as client:
         try:
-            # logger.debug(f"Request URL: {url}, Params: {params}")
             response = await client.get(url, params=params, timeout=30.0)
             response.raise_for_status()
             data = response.json()
-            # logger.debug(f"Full API response for {type_name}: {json.dumps(data, ensure_ascii=False, indent=2)}")
             
             items = data.get("body", {}).get("items", [])
             if not items:
@@ -140,7 +119,6 @@ async def fetch_dur_data(endpoint: str, type_name: str, ingr_code: str, field: s
             contents = []
             for item in items:
                 inner_item = item.get("item", item)
-                # logger.debug(f"Inner item for {type_name} with Prduct {ingr_code}: {json.dumps(inner_item, ensure_ascii=False)}")
                 
                 if type_name == "병용금기" and mixture_ingr_code:
                     ingr_code_from_api = inner_item.get("INGR_CODE")
@@ -148,14 +126,12 @@ async def fetch_dur_data(endpoint: str, type_name: str, ingr_code: str, field: s
                     if (ingr_code_from_api == ingr_code and mixture_ingr_code_from_api == mixture_ingr_code) or \
                        (ingr_code_from_api == mixture_ingr_code and mixture_ingr_code_from_api == ingr_code):
                         content = inner_item.get(field)
-                        # logger.debug(f"Matched INGR_CODE {ingr_code_from_api} and MIXTURE_INGR_CODE {mixture_ingr_code_from_api} for {type_name}: {content}")
                         if content is not None:
                             contents.append(content)
                 elif type_name == "동일성분주의":
                     mtral_sn = inner_item.get("MTRAL_SN")
                     mtral_code = inner_item.get(field)
                     prduct = inner_item.get("PRDUCT")
-                    # logger.debug(f"MTRAL_SN: {mtral_sn}, MTRAL_CODE: {mtral_code}, PRDUCT: {prduct} for {ingr_code}")
                     if str(mtral_sn) == "1" and mtral_code is not None and prduct is not None:
                         contents.append({"drugName": prduct, "mtralCode": mtral_code})
                     else:
@@ -163,11 +139,9 @@ async def fetch_dur_data(endpoint: str, type_name: str, ingr_code: str, field: s
                 else:
                     if inner_item.get("MIX_TYPE") == "단일":
                         content = inner_item.get(field)
-                        # logger.debug(f"Item {field} for {type_name} with ingrCode {ingr_code}: {content}")
                         if content is not None:
                             contents.append(content)
                     
-            # logger.debug(f"Extracted {field} for {type_name}: {contents}")
             return contents
         except httpx.HTTPStatusError as e:
             logger.error(f"HTTP error for {type_name}: {e.response.status_code} - {e.response.text}")
@@ -183,8 +157,6 @@ async def fetch_dur_data(endpoint: str, type_name: str, ingr_code: str, field: s
             })
 
 async def check_drug_interaction(request: DrugInteractionRequest):
-    # logger.debug(f"Received request body: {json.dumps(request.dict(), ensure_ascii=False)}")
-    
     result = {
         "동일성분주의": [],
         "병용금기": [],
@@ -192,13 +164,18 @@ async def check_drug_interaction(request: DrugInteractionRequest):
         "임부금기": [],
         "용량주의": [],
         "노인주의": [],
-        "투여기간주의": []
+        "투여기간주의": [],
+        "조회누락": []
     }
     
+    inquired_drugs = set()  # 조회 성공한 약물 이름을 저장할 set
+    drug_mtral_codes = {}  # 약물별 mtralCode 저장
+
     # 단일 약물에 대한 처리
     for drug in request.drugs:
         drug_name = drug.drugName
         ingr_code = drug.ingrCode
+        has_single_result = False
         for key, config in API_ENDPOINTS.items():
             if key != "usjnt_taboo" and key != "same_ingr":
                 # ingrCode가 null인 경우 API 호출 건너뛰기
@@ -212,12 +189,15 @@ async def check_drug_interaction(request: DrugInteractionRequest):
                     config["field"],
                     base_url=config["base_url"]
                 )
-                # logger.debug(f"Contents for {key} with ingrCode {ingr_code}: {contents}")
+                if contents:
+                    has_single_result = True
                 for content in contents:
                     result[config["typeName"]].append({
                         "drugName": drug_name,
                         "precaution": content
                     })
+        if has_single_result:
+            inquired_drugs.add(drug_name)
     
     # 병용금기 처리 (약물 쌍 조합)
     drug_pairs = list(combinations(request.drugs, 2))
@@ -237,15 +217,17 @@ async def check_drug_interaction(request: DrugInteractionRequest):
                 mixture_ingr_code=ingr_code2,
                 base_url=config["base_url"]
             )
-            # logger.debug(f"Contents for 병용금기 with ingrCode {ingr_code1} and mixture_ingr_code {ingr_code2}: {contents}")
+            if contents:
+                inquired_drugs.add(drug_name1)
+                inquired_drugs.add(drug_name2)
             for content in contents:
                 result[config["typeName"]].append({
-                    "drugName": [drug_name1, drug_name2],  # drugName 대신 drugNames 리스트 사용
+                    "drugName": [drug_name1, drug_name2],
                     "precaution": f"{drug_name1}과 {drug_name2}은 병용금기입니다."
                 })
     
     # 동일성분주의 처리
-    mtral_code_groups = {}
+    # 약물별 mtralCode 수집
     for drug in request.drugs:
         drug_name = drug.drugName
         config = API_ENDPOINTS["same_ingr"]
@@ -257,17 +239,29 @@ async def check_drug_interaction(request: DrugInteractionRequest):
             base_url=config["base_url"]
         )
         for content in contents:
-            mtral_code = content["mtralCode"]
-            if mtral_code not in mtral_code_groups:
-                mtral_code_groups[mtral_code] = []
-            mtral_code_groups[mtral_code].append(content["drugName"])
-    
-    # 동일 성분 약물 그룹화
-    for mtral_code, drug_names in mtral_code_groups.items():
-        if len(drug_names) > 1:
+            if content["drugName"] == drug_name:
+                drug_mtral_codes[drug_name] = content["mtralCode"]
+                inquired_drugs.add(drug_name)
+    print(f"Collected mtral codes: {drug_mtral_codes}")
+    # 약물 쌍별로 mtralCode 비교
+    for drug1, drug2 in combinations(request.drugs, 2):
+        drug_name1 = drug1.drugName
+        drug_name2 = drug2.drugName
+        mtral_code1 = drug_mtral_codes.get(drug_name1)
+        mtral_code2 = drug_mtral_codes.get(drug_name2)
+        
+        if mtral_code1 and mtral_code2 and mtral_code1 == mtral_code2:
             result["동일성분주의"].append({
-                "drugName": drug_names,
-                "precaution": f"{drug_names[0]}과 {drug_names[1]}은 동일 성분 중복입니다."
+                "drugName": [drug_name1, drug_name2],
+                "precaution": f"{drug_name1}과 {drug_name2}은 동일 성분 중복입니다."
             })
+    
+    # 조회누락 그룹화: 조회되지 않은 약물들만 추가
+    not_inquired_drugs = [drug.drugName for drug in request.drugs if drug.drugName not in inquired_drugs]
+    if not_inquired_drugs:
+        result["조회누락"].append({
+            "drugName": not_inquired_drugs,
+            "precaution": f"{', '.join(not_inquired_drugs)}은 DUR 조회 정보가 없습니다. 일부 약 또는 허가취소나 생산중단 등으로 조회되지 않을 수 있습니다."
+        })
     
     return {"durResult": result, "status": "success"}
