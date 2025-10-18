@@ -41,7 +41,8 @@ LLM을 사용해 자연어로 변환하며 건강보험심사평가원의 DUR AP
 
 ## 🖼️ 화면 설계도 (UI Mockup)
 
-프로토타입 나오면 추가할 예정
+![프로토타입-1](./assets/proto-type1.png)
+![프로토타입-2](./assets/proto-type2.png)
 
 ---
 
